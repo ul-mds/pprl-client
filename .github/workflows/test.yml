@@ -34,6 +34,6 @@ jobs:
           PPRL_TEST_BASE_URL: "http://localhost:8080"
     services:
       pprl:
-        image: ghcr.io/pprl/pprl-service:0.1.5
+        image: ghcr.io/ul-mds/pprl-service:0.1.5
         ports:
           - "8080:8080"
