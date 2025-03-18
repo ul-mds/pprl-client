@@ -157,7 +157,7 @@ def match(
                     idx_pairs, label=f"Matching bit vectors from {domain_file_path.name} and {range_file_path.name}"
                 ) as pbar:
                     # iterate over pairs of starting indices for domain and range
-                    for idx_tpl in idx_pairs:
+                    for idx_tpl in pbar:
                         domain_idx, range_idx = idx_tpl[0], idx_tpl[1]
 
                         # retrieve batch of vectors
