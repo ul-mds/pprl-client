@@ -38,6 +38,7 @@ from pprl_model import (
 from pydantic import BaseModel
 
 from pprl_client._cli import app
+from pprl_client.types import FakerGeneratorConfig, FakerGeneratorSpec
 from tests.helpers import generate_person
 
 pytestmark = pytest.mark.integration
@@ -344,3 +345,72 @@ def test_mask(base_mask_request, tmp_path_factory, uuid4_factory, cli_runner, pp
 
         assert set(reader.fieldnames) == {"id", "value"}
         assert count(reader) == entity_count
+
+
+def test_estimate_faker(tmp_path_factory, cli_runner, pprl_client):
+    tmp_dir = tmp_path_factory.mktemp("output")
+
+    # create config
+    faker_config = FakerGeneratorConfig(
+        seed=727,
+        count=5_000,
+        locale=["de-DE"],
+        generators=[
+            FakerGeneratorSpec(function_name="first_name_nonbinary", attribute_name="given_name"),
+            FakerGeneratorSpec(function_name="last_name", attribute_name="last_name"),
+            FakerGeneratorSpec(function_name="random_element", attribute_name="gender", args={"elements": ["m", "f"]}),
+            FakerGeneratorSpec(function_name="street_name", attribute_name="street_name"),
+            FakerGeneratorSpec(function_name="city", attribute_name="municipality"),
+            FakerGeneratorSpec(function_name="postcode", attribute_name="postcode"),
+        ],
+    )
+
+    faker_config_path = tmp_dir / "faker.json"
+    write_model_to(faker_config_path, faker_config)
+
+    # create base transform request
+    base_transform_request = BaseTransformRequest(
+        config=TransformConfig(empty_value=EmptyValueHandling.skip),
+        global_transformers=GlobalTransformerConfig(before=[NormalizationTransformer()]),
+    )
+
+    base_transform_request_path = tmp_dir / "transform-request.json"
+    write_model_to(base_transform_request_path, base_transform_request)
+
+    # set up output file
+    output_path = tmp_dir / "output.json"
+
+    result = cli_runner.invoke(
+        app,
+        [
+            "--base-url",
+            str(pprl_client._client.base_url),
+            "--batch-size",
+            "100",
+            "estimate",
+            "faker",
+            str(faker_config_path),
+            str(output_path),
+            "--base-transform-request-file-path",
+            str(base_transform_request_path),
+        ],
+    )
+
+    # check that everything went fine
+    assert result.exit_code == 0
+    assert output_path.exists()
+
+    # read list of weighted attribute configs
+    with open(output_path, mode="r", encoding="utf-8") as f:
+        output_data = json.load(f)
+
+    output_configs = [WeightedAttributeConfig(**m) for m in output_data]
+    output_config_len = len(output_configs)
+
+    # check that result is not empty
+    assert output_config_len > 0
+
+    # ensure that each attribute config is unique
+    assert output_config_len == len(set(c.attribute_name for c in output_configs))
+    assert output_config_len == len(set(c.weight for c in output_configs))
+    assert output_config_len == len(set(c.average_token_count for c in output_configs))
