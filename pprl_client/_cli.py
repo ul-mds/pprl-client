@@ -3,10 +3,11 @@ import csv
 import itertools
 import json
 from pathlib import Path
+from typing import Any
 
 import click
 import httpx
-from pprl_model import BitVectorEntity, BaseMatchRequest, MatchMethod
+from pprl_model import BitVectorEntity, BaseMatchRequest, MatchMethod, BaseTransformRequest, AttributeValueEntity
 from pydantic import BaseModel
 from typing_extensions import TypeVar
 
@@ -30,6 +31,27 @@ def read_bit_vector_entity_file(reader: csv.DictReader, id_column: str, value_co
         list of bit vector entities
     """
     return [BitVectorEntity(id=row[id_column], value=row[value_column]) for row in reader]
+
+
+def read_attribute_value_entity_file(reader: csv.DictReader, id_column: str):
+    field_names: list[str] = list(reader.fieldnames)
+
+    if id_column not in field_names:
+        raise ValueError(f"Column {id_column} not found in CSV file")
+
+    def _row_to_entity(row: dict[str, Any]):
+        return AttributeValueEntity(
+            id=str(row[id_column]),
+            attributes={
+                attribute_name: str(attribute_value)
+                for attribute_name, attribute_value in row.items()
+                if attribute_name != id_column
+            },
+        )
+
+    entities = list(_row_to_entity(row) for row in reader)
+
+    return field_names, entities
 
 
 _M = TypeVar("_M", bound=BaseModel)
@@ -183,3 +205,47 @@ def match(
                                 for m in r.matches
                             ]
                         )
+
+
+@app.command()
+@click.pass_context
+@click.argument("base_transform_request_file_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("entity_file_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("output_file_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--entity-id-column", type=str, default="id", help="column name in entity CSV file containing ID")
+def transform(
+    ctx: click.Context,
+    base_transform_request_file_path: Path,
+    entity_file_path: Path,
+    output_file_path: Path,
+    entity_id_column: str,
+):
+    """
+    Perform pre-processing on a CSV file with entities.
+
+    BASE_TRANSFORM_REQUEST_FILE_PATH is the path to a JSON file containing the base transform request.
+    ENTITY_FILE_PATH is the path to the CSV file containing entities.
+    OUTPUT_FILE_PATH is the path of the CSV file where the pre-processed entities should be written to.
+    """
+    client = create_client(ctx)
+    base_transform_request = parse_json_file_into(ctx, base_transform_request_file_path, BaseTransformRequest)
+
+    # read entities
+    with read_csv_file(ctx, entity_file_path, mode="r") as reader:
+        field_names, entities = read_attribute_value_entity_file(reader, entity_id_column)
+
+    # create list of indices for batching
+    batch_size = int(ctx.obj["BATCH_SIZE"])
+    idx = list(range(0, len(entities), batch_size))
+
+    with (
+        write_csv_file(ctx, output_file_path, field_names, mode="w", write_header=True) as writer,
+        click.progressbar(idx, label="Transforming entities") as pbar,
+    ):
+        for i in pbar:
+            # create batch
+            entity_batch = entities[i : i + batch_size]
+            r = client.transform(base_transform_request.with_entities(entity_batch))
+
+            # write results
+            writer.writerows([{entity_id_column: entity.id, **entity.attributes} for entity in r.entities])
