@@ -1,9 +1,9 @@
 This package contains a small HTTP-based library for working with the server provided by
-the [PPRL service package](https://github.com/ul-mds/pprl/tree/main/packages/pprl_service).
+the [PPRL service](https://github.com/ul-mds/pprl-service).
 It also contains a command-line application which uses the library to process CSV files.
 
 Weight estimation requires additional packages which are not shipped by default.
-To add them, install this package using any of the following commands as desired.
+To add them, install this package using the following command.
 
 ```
 $ pip install pprl_client[faker]
@@ -13,37 +13,30 @@ $ pip install pprl_client[faker]
 
 The library exposes functions for entity pre-processing, masking and bit vector matching.
 They follow the data model that is also used by the PPRL service, which is exposed through
-the [PPRL model package](https://github.com/ul-mds/pprl/tree/main/packages/pprl_model).
-
-In addition to the request objects, each function accepts a base URL, a full URL and a connection timeout in seconds as
-optional parameters.
-The full URL, if set, takes precedence over the base URL.
-The connection timeout is set to 10 seconds by default, but should be increased for large-scale requests.
+the [PPRL model package](https://github.com/ul-mds/pprl-model).
 
 ## Entity transformation
 
 ```python
 import pprl_client
-from pprl_model import EntityTransformRequest, TransformConfig, EmptyValueHandling, AttributeValueEntity, \
-    GlobalTransformerConfig, NormalizationTransformer
+from pprl_model import (
+    EntityTransformRequest,
+    TransformConfig,
+    EmptyValueHandling,
+    AttributeValueEntity,
+    GlobalTransformerConfig,
+    NormalizationTransformer,
+)
 
 client = pprl_client.PPRLClient(base_url="http://localhost:8080")
 
-response = client.transform(EntityTransformRequest(
-    config=TransformConfig(empty_value=EmptyValueHandling.error),
-    entities=[
-        AttributeValueEntity(
-            id="001",
-            attributes={
-                "first_name": "Müller",
-                "last_name": "Ludenscheidt"
-            }
-        )
-    ],
-    global_transformers=GlobalTransformerConfig(
-        before=[NormalizationTransformer()]
+response = client.transform(
+    EntityTransformRequest(
+        config=TransformConfig(empty_value=EmptyValueHandling.error),
+        entities=[AttributeValueEntity(id="001", attributes={"first_name": "Müller", "last_name": "Ludenscheidt"})],
+        global_transformers=GlobalTransformerConfig(before=[NormalizationTransformer()]),
     )
-))
+)
 
 print(response.entities)
 # => [AttributeValueEntity(id='001', attributes={'first_name': 'muller', 'last_name': 'ludenscheidt'})]
@@ -53,33 +46,31 @@ print(response.entities)
 
 ```python
 import pprl_client
-from pprl_model import EntityMaskRequest, MaskConfig, HashConfig, HashFunction, HashAlgorithm, RandomHash, CLKFilter, \
-    AttributeValueEntity
+from pprl_model import (
+    EntityMaskRequest,
+    MaskConfig,
+    HashConfig,
+    HashFunction,
+    HashAlgorithm,
+    RandomHash,
+    CLKFilter,
+    AttributeValueEntity,
+)
 
 client = pprl_client.PPRLClient(base_url="http://localhost:8080")
 
-response = client.mask(EntityMaskRequest(
-    config=MaskConfig(
-        token_size=2,
-        hash=HashConfig(
-            function=HashFunction(
-                algorithms=[HashAlgorithm.sha1],
-                key="s3cr3t_k3y"
+response = client.mask(
+    EntityMaskRequest(
+        config=MaskConfig(
+            token_size=2,
+            hash=HashConfig(
+                function=HashFunction(algorithms=[HashAlgorithm.sha1], key="s3cr3t_k3y"), strategy=RandomHash()
             ),
-            strategy=RandomHash()
+            filter=CLKFilter(hash_values=5, filter_size=256),
         ),
-        filter=CLKFilter(hash_values=5, filter_size=256)
-    ),
-    entities=[
-        AttributeValueEntity(
-            id="001",
-            attributes={
-                "first_name": "muller",
-                "last_name": "ludenscheidt"
-            }
-        )
-    ]
-))
+        entities=[AttributeValueEntity(id="001", attributes={"first_name": "muller", "last_name": "ludenscheidt"})],
+    )
+)
 
 print(response.entities)
 # => [BitVectorEntity(id='001', value='SKkgqBHBCJJCANICEKSpWMAUBYCQEMLuZgEQGBKRC8A=')]
@@ -93,28 +84,16 @@ from pprl_model import VectorMatchRequest, MatchConfig, SimilarityMeasure, BitVe
 
 client = pprl_client.PPRLClient(base_url="http://localhost:8080")
 
-response = client.match(VectorMatchRequest(
-    config=MatchConfig(
-        measure=SimilarityMeasure.jaccard,
-        threshold=0.8
-    ),
-    domain=[
-        BitVectorEntity(
-            id="001",
-            value="SKkgqBHBCJJCANICEKSpWMAUBYCQEMLuZgEQGBKRC8A="
-        )
-    ],
-    range=[
-        BitVectorEntity(
-            id="100",
-            value="UKkgqBHBDJJCANICELSpWMAUBYCMEMLrZgEQGBKRC7A="
-        ),
-        BitVectorEntity(
-            id="101",
-            value="H5DN45iUeEjrjbHZrzHb3AyQk9O4IgxcpENKKzEKRLE="
-        )
-    ]
-))
+response = client.match(
+    VectorMatchRequest(
+        config=MatchConfig(measure=SimilarityMeasure.jaccard, threshold=0.8),
+        domain=[BitVectorEntity(id="001", value="SKkgqBHBCJJCANICEKSpWMAUBYCQEMLuZgEQGBKRC8A=")],
+        range=[
+            BitVectorEntity(id="100", value="UKkgqBHBDJJCANICELSpWMAUBYCMEMLrZgEQGBKRC7A="),
+            BitVectorEntity(id="101", value="H5DN45iUeEjrjbHZrzHb3AyQk9O4IgxcpENKKzEKRLE="),
+        ],
+    )
+)
 
 print(response.matches)
 # => [Match(domain=BitVectorEntity(id='001', value='SKkgqBHBCJJCANICEKSpWMAUBYCQEMLuZgEQGBKRC8A='), range=BitVectorEntity(id='100', value='UKkgqBHBDJJCANICELSpWMAUBYCMEMLrZgEQGBKRC7A='), similarity=0.8536585365853658)]
@@ -124,41 +103,31 @@ print(response.matches)
 
 ```python
 import pprl_client
-from pprl_model import AttributeValueEntity, BaseTransformRequest, TransformConfig, EmptyValueHandling, \
-    GlobalTransformerConfig, NormalizationTransformer
+from pprl_model import (
+    AttributeValueEntity,
+    BaseTransformRequest,
+    TransformConfig,
+    EmptyValueHandling,
+    GlobalTransformerConfig,
+    NormalizationTransformer,
+)
 
 client = pprl_client.PPRLClient(base_url="http://localhost:8080")
 
 stats = pprl_client.estimate.compute_attribute_stats(
     client,
     [
-        AttributeValueEntity(
-            id="001",
-            attributes={
-                "given_name": "Max",
-                "last_name": "Mustermann",
-                "gender": "m"
-            }
-        ),
-        AttributeValueEntity(
-            id="002",
-            attributes={
-                "given_name": "Maria",
-                "last_name": "Musterfrau",
-                "gender": "f"
-            }
-        )
+        AttributeValueEntity(id="001", attributes={"given_name": "Max", "last_name": "Mustermann", "gender": "m"}),
+        AttributeValueEntity(id="002", attributes={"given_name": "Maria", "last_name": "Musterfrau", "gender": "f"}),
     ],
     BaseTransformRequest(
         config=TransformConfig(empty_value=EmptyValueHandling.skip),
-        global_transformers=GlobalTransformerConfig(
-            before=[NormalizationTransformer()]
-        )
+        global_transformers=GlobalTransformerConfig(before=[NormalizationTransformer()]),
     ),
 )
 
 print(stats)
-# => {'given_name': AttributeStats(average_tokens=5.0, ngram_entropy=2.9219280948873623), 'last_name': AttributeStats(average_tokens=11.0, ngram_entropy=3.913977073182751), 'gender': AttributeStats(average_tokens=2.0, ngram_entropy=2.0)}
+# => {'given_name': {'average_tokens': 5.0, 'ngram_entropy': 2.9219280948873623}, 'last_name': {'average_tokens': 11.0, 'ngram_entropy': 3.913977073182751}, 'gender': {'average_tokens': 2.0, 'ngram_entropy': 2.0}}
 ```
 
 # Command line interface
@@ -389,14 +358,28 @@ domain_id,domain_file,range_id,range_file,similarity
 
 Weight estimation is done with the `pprl estimate` command.
 It generates random data based off of user specification and computes estimates for attribute weights.
-Data can be generated using [Faker](https://faker.readthedocs.io/) and [Gecko](https://ul-mds.github.io/gecko/).
-These are exposed through the `faker` and `gecko` subcommands respectively.
-Both subcommands require a file that tell Faker and Gecko how to generate data, as well as a path to a file to write 
-results to.
-[Refer to the example files in the test asset directory](tests/assets).
+Data can be generated using [Faker](https://faker.readthedocs.io/).
+
+*faker.json*
+
+```json
+{
+  "seed": 727,
+  "count": 5000,
+  "locale": ["de_DE"],
+  "generators": [
+    {"function_name": "first_name_nonbinary", "attribute_name": "given_name"},
+    {"function_name": "last_name", "attribute_name": "last_name"},
+    {"function_name": "random_element", "attribute_name": "gender", "args": {"elements": ["m", "f"]}},
+    {"function_name": "street_name", "attribute_name": "street_name"},
+    {"function_name": "city", "attribute_name": "municipality"},
+    {"function_name": "postcode", "attribute_name": "postcode"}
+  ]
+}
+```
 
 ```
-$ pprl estimate faker tests/assets/faker-config.json faker-output.json
+$ pprl estimate faker faker.json faker-output.json
 ```
 
 *faker-output.json*
