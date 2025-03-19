@@ -27,6 +27,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: poetry install --with dev
+        run: poetry install --with dev --all-extras
       - name: Test
         run: poetry run pytest
+        env:
+          PPRL_TEST_BASE_URL: "http://localhost:8080"
+    services:
+      pprl:
+        image: ghcr.io/ul-mds/pprl-service:0.1.5
+        ports:
+          - "8080:8080"
