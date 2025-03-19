@@ -7,7 +7,14 @@ from typing import Any
 
 import click
 import httpx
-from pprl_model import BitVectorEntity, BaseMatchRequest, MatchMethod, BaseTransformRequest, AttributeValueEntity
+from pprl_model import (
+    BitVectorEntity,
+    BaseMatchRequest,
+    MatchMethod,
+    BaseTransformRequest,
+    AttributeValueEntity,
+    BaseMaskRequest,
+)
 from pydantic import BaseModel
 from typing_extensions import TypeVar
 
@@ -249,3 +256,54 @@ def transform(
 
             # write results
             writer.writerows([{entity_id_column: entity.id, **entity.attributes} for entity in r.entities])
+
+
+@app.command()
+@click.pass_context
+@click.argument("base_mask_request_file_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("entity_file_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("output_file_path", type=click.Path(dir_okay=False, file_okay=True, path_type=Path))
+@click.option("--entity-id-column", type=str, default="id", help="column name in entity CSV file containing ID")
+@click.option(
+    "--entity-value-column", type=str, default="value", help="column name in output CSV file containing vector value"
+)
+def mask(
+    ctx: click.Context,
+    base_mask_request_file_path: Path,
+    entity_file_path: Path,
+    output_file_path: Path,
+    entity_id_column: str,
+    entity_value_column: str,
+):
+    """
+    Mask a CSV file with entities.
+
+    BASE_MASK_REQUEST_FILE_PATH is the path to a JSON file containing the base mask request.
+    ENTITY_FILE_PATH is the path to the CSV file containing entities.
+    OUTPUT_FILE_PATH is the path of the CSV file where the masked entities should be written to.
+    """
+    client = create_client(ctx)
+    base_mask_request = parse_json_file_into(ctx, base_mask_request_file_path, BaseMaskRequest)
+
+    with read_csv_file(ctx, entity_file_path, mode="r") as reader:
+        _, entities = read_attribute_value_entity_file(reader, entity_id_column)
+
+    # create list of indices for batching
+    batch_size = int(ctx.obj["BATCH_SIZE"])
+    idx = list(range(0, len(entities), batch_size))
+
+    with (
+        write_csv_file(
+            ctx, output_file_path, [entity_id_column, entity_value_column], mode="w", write_header=True
+        ) as writer,
+        click.progressbar(idx, label="Masking entities") as pbar,
+    ):
+        for i in pbar:
+            # create batch
+            entity_batch = entities[i : i + batch_size]
+            r = client.mask(base_mask_request.with_entities(entity_batch))
+
+            # write results
+            writer.writerows(
+                [{entity_id_column: entity.id, entity_value_column: entity.value} for entity in r.entities]
+            )
