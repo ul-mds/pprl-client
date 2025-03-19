@@ -51,7 +51,8 @@ def read_attribute_value_entity_file(reader: csv.DictReader, id_column: str):
     field_names: list[str] = list(reader.fieldnames)
 
     if id_column not in field_names:
-        raise ValueError(f"Column {id_column} not found in CSV file")
+        click.echo(f"Column {id_column} not found in CSV file", err=True)
+        raise click.exceptions.Exit(1)
 
     def _row_to_entity(row: dict[str, Any]):
         return AttributeValueEntity(
