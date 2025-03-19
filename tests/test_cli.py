@@ -37,7 +37,7 @@ from pprl_model import (
 )
 from pydantic import BaseModel
 
-from pprl_client._cli import app
+from pprl_client.main import app
 from pprl_client.types import FakerGeneratorConfig, FakerGeneratorSpec
 from tests.helpers import generate_person
 
